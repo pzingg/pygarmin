@@ -108,7 +108,7 @@ class LinkException(GarminException):
     """Link error."""
 
     def __str__(self):
-        return "Link Error"
+        return "Link Error: %s" % self.data
 
 
 class ProtocolException(GarminException):
@@ -354,8 +354,8 @@ class A010:
     Cmnd_Transfer_Trk = 6          # transfer track log
     Cmnd_Transfer_Wpt = 7          # transfer waypoints
     Cmnd_Turn_Off_Pwr = 8          # turn off power
-    Cmnd_Start_Pvt_Data = 49       # start transmitting PVT data
-    Cmnd_Stop_Pvt_Data = 50        # stop transmitting PVT data
+    Cmnd_Start_Pvt_Data = 49       # start transmitting PVT data (GPS 18: Position Record On)
+    Cmnd_Stop_Pvt_Data = 50        # stop transmitting PVT data (GPS 18: Position Record Off)
     Cmnd_FlightBook_Transfer = 92  # transfer flight records
     Cmnd_Transfer_Laps = 117       # transfer laps
     Cmnd_Transfer_Runs = 450       # transfer runs
@@ -504,6 +504,25 @@ class MultiTransferProtocol(TransferProtocol):
         return result
 
 
+class Gps18SatelliteDataTransferProtocol(TransferProtocol):
+    """The GPS 18 can report on satellite aquistion.
+    The record ID for the received packet is 0x72 with 84 (0x54) data bytes.
+    The data bytes contain the data for the 12 possible satellite channels.
+    For each satellite, the following data is available:
+
+    uint8 svid; //space vehicle identification (1-32 and 33-64 for WAAS)
+    uint16 snr; //signal-to-noise ratio
+    uint8 elev; //satellite elevation in degrees
+    uint16 azmth; //satellite azimuth in degrees
+    uint8 status; //status bit-field"""
+
+    def getData(self):
+        data = self.link.expectPacket(0x72)
+        p = Gps18SatelliteData()
+        p.unpack(data)
+        return p
+
+
 class T001:
     """T001 implementation.
 
@@ -514,9 +533,9 @@ class A100(SingleTransferProtocol):
     """Waypoint transfer protocol."""
 
     def getData(self, callback = None):
-        return SingleTransferProtocol.getData(self, callback,
-                                                                                                                                                                self.cmdproto.Cmnd_Transfer_Wpt,
-                                                                                                                                                                self.link.Pid_Wpt_Data)
+        return SingleTransferProtocol.getData(
+            self, callback, self.cmdproto.Cmnd_Transfer_Wpt,
+            self.link.Pid_Wpt_Data)
 
     def putData(self,data,callback):
         sendData = []
@@ -766,6 +785,21 @@ class A650(SingleTransferProtocol):
 class A700(TransferProtocol):
     """Position initialisation protocol."""
 
+    def getData(self, callback = None):
+        self.link.sendPacket(
+            self.link.Pid_Command_Data, self.cmdproto.Cmnd_Transfer_Posn)
+        data = self.link.expectPacket(self.link.Pid_Position_Data)
+        p = self.datatypes[0]()
+        p.unpack(data)
+
+        if callback:
+            try:
+                callback(p,1,1,self.link.Pid_Command_Data)
+            except:
+                raise
+
+        return p
+
 
 class A800(TransferProtocol):
     """PVT data protocol.
@@ -902,6 +936,125 @@ class DataPoint:
             print "Parts:  <" + ", ".join(self.parts) + ">"
             print "Input:  <" + "><".join(bytes) + ">"
             raise
+
+
+def Gps18SatelliteData(DataPoint):
+    """ The record ID for the received packet is 0x72 with 84 (0x54) data bytes.
+    The data bytes contain the data for the 12 possible satellite channels.
+    For each satellite, the following data is available:
+
+        uint8 svid; //space vehicle identification (1-32 and 33-64 for WAAS)
+        uint16 snr; //signal-to-noise ratio
+        uint8 elev; //satellite elevation in degrees
+        uint16 azmth; //satellite azimuth in degrees
+        uint8 status; //status bit-field"""
+
+    parts = (
+        "s0_svid", "s0_snr", "s0_elev", "s0_azmth", "s0_status",
+        "s1_svid", "s1_snr", "s1_elev", "s1_azmth", "s1_status",
+        "s2_svid", "s2_snr", "s2_elev", "s2_azmth", "s2_status",
+        "s3_svid", "s3_snr", "s3_elev", "s3_azmth", "s3_status",
+        "s4_svid", "s4_snr", "s4_elev", "s4_azmth", "s4_status",
+        "s5_svid", "s5_snr", "s5_elev", "s5_azmth", "s5_status",
+        "s6_svid", "s6_snr", "s6_elev", "s6_azmth", "s6_status",
+        "s7_svid", "s7_snr", "s7_elev", "s7_azmth", "s7_status",
+        "s8_svid", "s8_snr", "s8_elev", "s8_azmth", "s8_status",
+        "s9_svid", "s9_snr", "s9_elev", "s9_azmth", "s9_status",
+        "s10_svid", "s10_snr", "s10_elev", "s10_azmth", "s10_status",
+        "s11_svid", "s11_snr", "s11_elev", "s11_azmth", "s11_status",
+     )
+    fmt = "< B H B H B B H B H B B H B H B B H B H B"
+    fmt +=  "B H B H B B H B H B B H B H B B H B H B"
+    fmt +=  "B H B H B B H B H B B H B H B B H B H B"
+
+    def getList(self):
+        self.data = [
+            {
+                'svid': self.s0_svid,
+                'snr': self.s0_snr,
+                'elev': self.s0_elev,
+                'azmth': self.s0_azmth,
+                'status': self.s0_status
+            },
+            {
+                'svid': self.s1_svid,
+                'snr': self.s1_snr,
+                'elev': self.s1_elev,
+                'azmth': self.s1_azmth,
+                'status': self.s1_status
+            },
+            {
+                'svid': self.s2_svid,
+                'snr': self.s2_snr,
+                'elev': self.s2_elev,
+                'azmth': self.s2_azmth,
+                'status': self.s2_status
+            },
+            {
+                'svid': self.s3_svid,
+                'snr': self.s3_snr,
+                'elev': self.s3_elev,
+                'azmth': self.s3_azmth,
+                'status': self.s3_status
+            },
+            {
+                'svid': self.s4_svid,
+                'snr': self.s4_snr,
+                'elev': self.s4_elev,
+                'azmth': self.s4_azmth,
+                'status': self.s4_status
+            },
+            {
+                'svid': self.s5_svid,
+                'snr': self.s5_snr,
+                'elev': self.s5_elev,
+                'azmth': self.s5_azmth,
+                'status': self.s5_status
+            },
+            {
+                'svid': self.s6_svid,
+                'snr': self.s6_snr,
+                'elev': self.s6_elev,
+                'azmth': self.s6_azmth,
+                'status': self.s6_status
+            },
+            {
+                'svid': self.s7_svid,
+                'snr': self.s7_snr,
+                'elev': self.s7_elev,
+                'azmth': self.s7_azmth,
+                'status': self.s7_status
+            },
+            {
+                'svid': self.s8_svid,
+                'snr': self.s8_snr,
+                'elev': self.s8_elev,
+                'azmth': self.s8_azmth,
+                'status': self.s8_status
+            },
+            {
+                'svid': self.s9_svid,
+                'snr': self.s9_snr,
+                'elev': self.s9_elev,
+                'azmth': self.s9_azmth,
+                'status': self.s9_status
+            },
+            {
+                'svid': self.s10_svid,
+                'snr': self.s10_snr,
+                'elev': self.s10_elev,
+                'azmth': self.s10_azmth,
+                'status': self.s10_status
+            },
+            {
+                'svid': self.s11_svid,
+                'snr': self.s11_snr,
+                'elev': self.s11_elev,
+                'azmth': self.s11_azmth,
+                'status': self.s11_status
+            }
+        ]
+        return self.data
 
 
 # Waypoints  ---------------------------------------------------
@@ -1474,7 +1627,7 @@ class D202(RouteHdr):
     parts = ("ident",)
     fmt="<s"
 
-# I don't think this should be here. D210 is a RouteLink, and 
+# I don't think this should be here. D210 is a RouteLink, and
 # is defined below.
 #
 # class D210(DataPoint):
@@ -1656,7 +1809,15 @@ class TimePoint(DataPoint):
 
 
 class D600(TimePoint):
-    pass
+    def getDict(self):
+        self.data = {'year': self.year,
+                     'month': self.month,
+                     'day': self.day,
+                     'hour': self.hour,
+                     'min': self.min,
+                     'sec': self.sec
+                     }
+        return self.data
 
 
 class D601(TimePoint):
@@ -1678,6 +1839,10 @@ class D650(DataPoint):
 
 # Position   ---------------------------------------------------
 
+def radians_to_degrees(r):
+    return r * 180.0 / math.pi
+
+
 class D700(DataPoint):
 
     parts = ("rlat", "rlon")
@@ -1685,10 +1850,23 @@ class D700(DataPoint):
     rlat = 0.0  # radians
     rlon = 0.0  # radians
 
+    def getDict(self):
+        self.data = {
+            'lat': radians_to_degrees(self.rlat),
+            'lon': radians_to_degrees(self.rlon)
+        }
+        return self.data
 
 # Pvt ---------------------------------------------------------
 
 # Live position info
+
+
+def fix_value(fix):
+    if fix >= 0 and fix <= 5:
+        return [None, None, '2d', '3d', '2d_diff', '3d_diff'][fix]
+    return None
+
 
 class D800(DataPoint):
 
@@ -1699,6 +1877,18 @@ class D800(DataPoint):
     def __str__(self):
         return "tow: %g rlat: %g rlon: %g east: %g north %g" \
         % (self.tow, self.rlat, self.rlon, self.east, self.north)
+
+    def getDict(self):
+        self.data = {
+            'fix': fix_value(self.fix),
+            'alt': self.alt,
+            'msl_height': self.msl_height,
+            'lat': radians_to_degrees(self.rlat),
+            'lon': radians_to_degrees(self.rlon),
+            'east': self.east,
+            'north': self.north
+        }
+        return self.data
 
 
 class D906(DataPoint):
@@ -1809,6 +1999,7 @@ ModelIDs = (
    (34, "GPS 155"),
    (98, "GPS 155 XL"),
    (34, "GPS 165"),
+   (273, "GPS 18 USB"),
    (41, "GPS 38"),
    (56, "GPS 38 Chinese"),
    (62, "GPS 38 Japanese"),
@@ -2076,7 +2267,7 @@ class USBLink:
     Pid_Start_Session2 = 16
     Pid_Session_Started2 = 17
 
-    def __init__(self):
+    def __init__(self, timeout = 1000):
         # Import usb here, so that you don't have to have that module
         # installed, if you're not using a usb link.
         import usb
@@ -2092,6 +2283,7 @@ class USBLink:
             raise LinkException("No Garmin device found!")
         self.handle = self.garmin_dev.open()
         self.handle.claimInterface(0)
+        self.timeout = timeout
 
         try:
             self.startSession()
@@ -2112,6 +2304,7 @@ class USBLink:
         start_packet2 = self.constructPacket(0, self.Pid_Session_Started2)
         self.sendUSBPacket(start_packet2)
         self.unit_id = self.readSessionStartedPacket()
+        usb_log.debug("USB startSession done, unit_id is %s" % self.unit_id)
 
     def readSessionStartedPacket(self):
         """Read from the USB bus until session started packet is received."""
@@ -2145,16 +2338,25 @@ class USBLink:
         package += data_part
         return package
 
+    def constructNmeaModePacket(self):
+        """If the GPS sensor is in the Binary data mode, it is necessary
+        to send the following eight-byte data stream to temporarily change
+        the data format to NMEA 0183."""
+        return ['\x10', '\x0A', '\x02', '\x26', '\x00', '\xCE', '\x10', '\x03']
+
     def sendPacket(self, tp, data):
         """Send a packet."""
         packet = self.constructPacket(20, tp, data)
         self.sendUSBPacket(packet)
 
     def sendUSBPacket(self, packet):
-        """Send a packet over the USB bus."""
+        """Send a packet over the USB bus. The Garmin GPS 18 unit has three USB endpoints.
+            0 = Bulk read
+            1 = Interrupt read
+            2 = Bulk write"""
         usb_log.debug("Sending %s bytes..." % len(packet))
         usb_packet_log.debug("< usb: %s" % (hexdump(packet)))
-        sent = self.handle.bulkWrite(0x02, packet)
+        sent = self.handle.bulkWrite(0x02, [ord(c) for c in packet])
         usb_log.debug("Sent %s bytes" % sent)
 
     def unpack(self, packet):
@@ -2174,16 +2376,19 @@ class USBLink:
         return packet_id, data
 
     def readUSBPacket(self, size):
-        """Read a packet over USB bus."""
+        """Read a packet over USB bus. The Garmin GPS 18 unit has three USB endpoints.
+            0 = Bulk read
+            1 = Interrupt read
+            2 = Bulk write"""
         usb_log.debug("Reading %s bytes..." % size)
-        packet = self.handle.interruptRead(0x81, size)
+        packet = self.handle.interruptRead(0x81, size, timeout = self.timeout*1000)
         packet = ''.join(struct.pack("<B", byte) for byte in packet)
         usb_packet_log.debug("> usb: %s" % (hexdump(packet)))
         usb_log.debug("Read %s bytes" % len(packet))
         return packet
 
-    def settimeout(self, timeout):
-        pass
+    def settimeout(self, secs):
+        self.timeout = secs
 
     def close(self):
         self.handle.releaseInterface()
@@ -2273,7 +2478,10 @@ class Garmin:
             self.flightBook = self.protos["flightbook"][0](
                 self.link, self.cmdProto,self.protos["flightbook"][1])
 
-        # Sorry, no link for A700
+        # self.posLink = A700(self.link, self.cmdProto,D700)
+        if self.protos.has_key("position"):
+            self.posLink = self.protos["position"][0](
+                self.link, self.cmdProto,self.protos["position"][1])
 
         # self.pvtLink = A800(self.link, self.cmdProto, D800)
         if self.protos.has_key("pvt"):
@@ -2335,6 +2543,9 @@ class Garmin:
 
     def getFlightBook(self,callback = None):
         return self.flightBook.getData(callback)
+
+    def getPosition(self,callback = None):
+        return self.posLink.getData(callback)
 
     def pvtOn(self):
         return self.pvtLink.dataOn()
@@ -2459,18 +2670,20 @@ def MyCallbackgetAlmanac(satellite,recordnumber,totalPointsToGet,tp):
 # The following is test code. See other included files for more
 # useful applications.
 
-def main():
-
-    if os.name == 'nt':
-        #0 is com1, 1 is com2 etc
-        serialDevice =  0
+def main(device = None):
+    if device == 'usb:':
+        phys = USBLink()
     else:
-        serialDevice =  "/dev/ttyS0"
+        if device is None or device == 'serial:':
+            if os.name == 'nt':
+                #0 is com1, 1 is com2 etc
+                device =  0
+            else:
+                device =  "/dev/ttyS0"
 
-        if sys.platform[:-1] == "freebsd":
-            serialDevice =  "/dev/cuaa0" # For FreeBsd
-
-    phys = SerialLink(serialDevice)
+            if sys.platform[:-1] == "freebsd":
+                device =  "/dev/cuaa0" # For FreeBsd
+        phys = SerialLink(device)
 
     gps = Garmin(phys)
 
@@ -2510,8 +2723,8 @@ def main():
 
         if len(gps.protocols_unknown):
             print
-            print "Product protocols who are not supported yet:"
-            print "--------------------------------------------"
+            print "Product protocols that are not supported yet:"
+            print "---------------------------------------------"
 
             for i in range(len(gps.protocols_unknown)):
                 p = gps.protocols_unknown[i]
@@ -2535,6 +2748,7 @@ def main():
 
         waypoints = gps.getWaypoints()
 
+        print
         print "Waypoints :"
         print "-----------"
 
@@ -2542,7 +2756,7 @@ def main():
             print x
 
         print
-        print   "Same waypoints called by a callback function:"
+        print "Same waypoints called by a callback function:"
         print "---------------------------------------------"
         print
 
@@ -2570,7 +2784,8 @@ def main():
 
         data3 = {'ident':"CLUB91",'cmnt':"DRINKING",'slat':606532864,'slon':57654672,'smbl':13}
 
-        print "Send waypoints to gps :"
+        print
+        print "Send waypoints to gps:"
         print "----------------------"
 
         gps.putWaypoints([data1,data2,data3],MyCallbackputWaypoints)
@@ -2587,6 +2802,7 @@ def main():
 
         routes = gps.getRoutes()
 
+        print
         print "Routes"
         print "------"
 
@@ -2604,7 +2820,7 @@ def main():
         # Now with a callback function
 
         print
-        print "Same routes but now with a callback function :"
+        print "Same routes but now with a callback function:"
         print "---------------------------------------------"
         print
 
@@ -2650,7 +2866,7 @@ def main():
         # Now with a callback function
 
         print
-        print "Same routes but now with a callback function :"
+        print "Same routes but now with a callback function:"
         print "---------------------------------------------"
         print "If you leave the header empty, the computer will generate one for you (ROUTE1,ROUTE2,....)"
 
@@ -2665,6 +2881,7 @@ def main():
     # Show Tracks
 
     if 0:
+        print
         print "Tracks"
         print "------"
 
@@ -2686,7 +2903,7 @@ def main():
         # Now with a callback function
 
         print
-        print "Same tracks but now with a callback function :"
+        print "Same tracks but now with a callback function:"
         print "---------------------------------------------"
 
         gps.getTracks(MyCallbackgetTracks)
@@ -2694,8 +2911,9 @@ def main():
     # Send tracks
 
     if 0:
-        print "Sending tracks with a callback function :"
-        print "-----------------------------------------"
+        print
+        print "Sending tracks with a callback function:"
+        print "----------------------------------------"
         print "If you leave the header empty, the computer will generate one for you (TRACK1,TRACK2,....)"
         print "It's possible to send track to the ACTIVE LOG.but you can't send time to tracks"
 
@@ -2732,6 +2950,7 @@ def main():
     # Show proximity points
 
     if 0:
+        print
         print "Proximity waypoints:"
         print "-------------------"
 
@@ -2741,8 +2960,9 @@ def main():
     # Send  proximity points
 
     if 0:
-        print "Sending 2 proximity waypoints :"
-        print "-------------------------------"
+        print
+        print "Sending 2 proximity waypoints:"
+        print "------------------------------"
 
         data1 = {'ident':'WATER','slat': 608688816,'slon': 45891108,'dist':300}
         data2 = {'ident':'AERPRT','slat': 607132209,'slon': 53673984,'dist':400}
@@ -2753,6 +2973,7 @@ def main():
     # Show almanac
 
     if 0:
+        print
         print "Almanac information:"
         print "--------------------"
 
@@ -2761,6 +2982,7 @@ def main():
     # Show FlightBook
 
     if 0:
+        print
         print "FlightBook information:"
         print "-----------------------"
 
@@ -2771,7 +2993,8 @@ def main():
 
     # Show date and time
 
-    if 0:
+    if 1:
+        print
         print "Date and time:"
         print "--------------"
 
@@ -2780,21 +3003,35 @@ def main():
 
         print gps.getTime(MyCallbackgetTime)
 
+    # Show position
+
+    if 1:
+        print
+        print "Position:"
+        print "---------"
+
+        position = gps.getPosition()
+        print position.getDict()
+
     # Show some real-time data
 
-    if 0:
-        print "Starting pvt"
-        print "-----------"
+    if 1:
+        print
+        print "Starting pvt:"
+        print "-------------"
 
         gps.pvtOn()
 
-        def MyCallbackgetPvt(pvt,recordnumber,totalPointsToGet,tp):
-            print pvt.getDict()
-
         try:
-            for i in range(10):
-                p = gps.getPvt(MyCallbackgetPvt)
-                print p
+            i = 0
+            while i < 10:
+                pvt = gps.getPvt()
+                d = pvt.getDict()
+                if d['fix']:
+                    print d
+                    i += 1
+                else:
+                    print 'no fix'
 
         finally:
             print "Stopping pvt"
@@ -2803,8 +3040,9 @@ def main():
     # Show Lap type info
 
     if 0:
-        print "Lap info"
-        print "--------"
+        print
+        print "Lap info:"
+        print "---------"
 
         laps = gps.getLaps()
 
@@ -2812,5 +3050,45 @@ def main():
             print x
 
 
+
+logging_levels = {
+    0: logging.NOTSET,
+    1: logging.CRITICAL,
+    2: logging.ERROR,
+    3: logging.WARNING,
+    4: logging.INFO,
+    5: logging.DEBUG,
+    6: VERBOSE,
+    }
+
+
+def setup_logging(debug_level):
+    """Set up logging for the garmin module.
+
+    The higher the debug level, the more output.
+    """
+    garmin_log = logging.getLogger('pygarmin')
+    garmin_log.addHandler(logging.StreamHandler())
+    garmin_log.setLevel(logging_levels[debug_level])
+
+
 if __name__ == "__main__":
-    main()
+    from arguments import Arguments
+    args = Arguments(
+        {'d' : ('debug', 'LEVEL', 'Set debug level, 0-6')},
+        'Usage: %s [OPTIONS] DEVICE',
+        'Demonstrate Garmin class usage',
+        'Example: %s -d5 usb:')
+
+    if args.options.has_key('help'):
+        args.help()
+        sys.exit(0)
+
+    if len(args) == 0:
+        args.help()
+        sys.exit(1)
+
+    if args.options.has_key('debug'):
+        setup_logging(int(args.options['debug']))
+
+    main(args[0])
