@@ -164,35 +164,3 @@ The logo was designed by [Quentin Stafford-Fraser].
 [Garmin]: http://www.garmin.com
 [protocol specification]: http://www.garmin.com/support/commProtocol.html
 [Quentin Stafford-Fraser]: http://quentinsf.com
-
-Known Bugs
-----------
-
-The Garmin 12 USB D600 packet should return UTC date and time, but either it fails to return
-the date portion correctly, or the documentation is incorrect.
-
-```
-# Not sure what the last four bytes are. Not in docs.
-# hmm... eTrex just sends 8 bytes, no trailing 4 bytes
-parts = ("month", "day", "year", "hour", "min", "sec") #,"unknown")
-fmt = "<b b H h b b" #L"
-```
-
-Example D600 packet: `b`\x01\x04\xcf\x07\x15\x00\x20\x04``
-
-That would be encoded as
-`b'\x01'` - month - 1 (Jan)
-`b'\x04'` - day - 4
-`b'\xcf\x07'` - year - 1999
-`b'\x15\x00'` - hour - 21
-`b'\x20'` - min - 32
-`b'\x04'` - sec - 4
-
-While the time part, 21:32:04 UTC, is correct, the date part, 1999-01-04 is
-incorrect, the date should be 2018-08-20.
-
-Timestamp for 2018-08-20 00:00:00 UTC = 1534723200
-Timestamp for 1999-01-04 00:00:00 UTC =  915408000
-Difference                            =  619315200
-
-datetime.timedelta(3290, 81438)

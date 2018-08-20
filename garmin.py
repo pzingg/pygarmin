@@ -2707,10 +2707,10 @@ def MyCallbackputTracks(point,recordnumber,totalPointsToSend,tp):
 def MyCallbackgetAlmanac(satellite,recordnumber,totalPointsToGet,tp):
 
     print
+    print "Satellite", recordnumber
 
-    d = satellite.getDict()
-    for x in d: # or satellite.dataDict
-        print "%7s --> %s" % (x, d[x])
+    for x in satellite.__dict__: # or satellite.dataDict
+        print "%7s --> %s" % (x, satellite.__dict__[x])
 
 
 # =================================================================
