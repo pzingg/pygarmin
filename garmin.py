@@ -29,6 +29,7 @@
 
 """
 
+from datetime import datetime, timedelta
 import os, sys, time
 import newstruct as struct
 import math
@@ -44,6 +45,46 @@ usb_packet_log = logging.getLogger('pygarmin.usb.packet')
 # Verbose debug.
 VERBOSE = 5
 
+
+
+# Date calculations ================================================
+
+# The GPS epoch is 1980-01-06 00:00:00 UTC, or
+GPS_EPOCH = datetime.utcfromtimestamp(315964800)
+
+# The Garmin epoch is 1990-01-01 00:00:00 UTC, or
+GARMIN_EPOCH = datetime.utcfromtimestamp(631152000)
+
+# By trial and error, this seems to be the right epoch for the Garmin GPS 18
+# 2009-08-07 00:00:00 UTC
+GPS18_EPOCH = datetime.utcfromtimestamp(1250467200)
+
+# 7168 days?
+GPS18_DELTA = GPS18_EPOCH - GARMIN_EPOCH
+
+def gpsToUTC(gps_week, gps_seconds, leap_seconds):
+    days = gps_week * 7
+    seconds = gps_seconds + leap_seconds
+    elapsed = timedelta(days=days, seconds=seconds)
+    try:
+        return GPS_EPOCH + elapsed
+    except:
+        return elapsed
+
+def garminToUTC(garmin_days, gps_tow, leap_seconds):
+    seconds = (int(gps_tow) % 86400) + leap_seconds
+    elapsed = timedelta(days=garmin_days, seconds=seconds)
+    try:
+        return GPS18_EPOCH + elapsed
+    except:
+        return elapsed
+
+def garminDeltaUTC(year, month, day, hour, minute, second):
+    base = datetime(year, month, day, hour, minute, second)
+    try:
+        return base + GPS18_DELTA
+    except:
+        return base
 
 # Introduction =====================================================
 
@@ -1815,7 +1856,8 @@ class D600(TimePoint):
                      'day': self.day,
                      'hour': self.hour,
                      'min': self.min,
-                     'sec': self.sec
+                     'sec': self.sec,
+                     'dt': garminDeltaUTC(self.year, self.month, self.day, self.hour, self.min, self.sec)
                      }
         return self.data
 
@@ -1870,13 +1912,13 @@ def fix_value(fix):
 
 class D800(DataPoint):
 
-    parts = ("alt", "epe", "eph", "epv", "fix", "tow", "rlat", "rlon",
-             "east", "north", "up", "msl_height", "leap_secs", "wn_days")
+    parts = ("alt", "epe", "eph", "epv", "fix", "gps_tow", "rlat", "rlon",
+             "east", "north", "up", "msl_height", "leap_secs", "grmn_days")
     fmt = "<f f f f h d d d f f f f h l"
 
     def __str__(self):
         return "tow: %g rlat: %g rlon: %g east: %g north %g" \
-        % (self.tow, self.rlat, self.rlon, self.east, self.north)
+        % (self.gps_tow, self.rlat, self.rlon, self.east, self.north)
 
     def getDict(self):
         self.data = {
@@ -1886,7 +1928,11 @@ class D800(DataPoint):
             'lat': radians_to_degrees(self.rlat),
             'lon': radians_to_degrees(self.rlon),
             'east': self.east,
-            'north': self.north
+            'north': self.north,
+            'tow': self.gps_tow,
+            'days': self.grmn_days,
+            'leap_secs': self.leap_secs,
+            'dt': garminToUTC(self.grmn_days, self.gps_tow, self.leap_secs)
         }
         return self.data
 
@@ -2662,8 +2708,9 @@ def MyCallbackgetAlmanac(satellite,recordnumber,totalPointsToGet,tp):
 
     print
 
-    for x in satellite.dataDict:
-        print "%7s --> %s" % (x,satellite.dataDict[x])
+    d = satellite.getDict()
+    for x in d: # or satellite.dataDict
+        print "%7s --> %s" % (x, d[x])
 
 
 # =================================================================
@@ -2739,6 +2786,15 @@ def main(device = None):
                         print p,
 
             print
+
+        print
+        print "Date information:"
+        print "-----------------"
+        print "GPS epoch:", GPS_EPOCH
+        print "Garmin epoch:", GARMIN_EPOCH
+        print "GPS 18 epoch:", GPS18_EPOCH
+        print "GPS 18 offset:", GPS18_DELTA
+
 
     # Show waypoints
 
@@ -3001,7 +3057,7 @@ def main(device = None):
         def MyCallbackgetTime(timeInfo,recordnumber,totalPointsToGet,tp):
             print timeInfo.getDict() # or timeInfo.dataDict
 
-        print gps.getTime(MyCallbackgetTime)
+        gps.getTime(MyCallbackgetTime)
 
     # Show position
 
@@ -3024,7 +3080,7 @@ def main(device = None):
 
         try:
             i = 0
-            while i < 10:
+            while i < 5:
                 pvt = gps.getPvt()
                 d = pvt.getDict()
                 if d['fix']:
