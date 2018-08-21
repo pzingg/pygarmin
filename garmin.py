@@ -1708,6 +1708,7 @@ class RouteLink(DataPoint):
 
 
 class D210(RouteLink):
+
     parts = ("clazz", "subclass", "ident")
     fmt = "<h 18s s"
 
@@ -1820,6 +1821,7 @@ class D450(ProxPoint, D150):
 # Almanacs ---------------------------------------------------
 
 class Almanac(DataPoint):
+
     pass
 
 
@@ -1873,6 +1875,7 @@ class TimePoint(DataPoint):
 
 
 class D600(TimePoint):
+
     def getDict(self):
         self.data = {'year': self.year,
                      'month': self.month,
@@ -1890,6 +1893,8 @@ class D601(TimePoint):
 
     Used by GPSmap 60cs, no documentation as of 2004-09-26.
     """
+
+    pass
 
 
 class D650(DataPoint):
@@ -1917,8 +1922,8 @@ class D700(DataPoint):
 
     def getDict(self):
         self.data = {
-            'lat': radians_to_degrees(self.rlat),
-            'lon': radians_to_degrees(self.rlon)
+            'latitude': radians_to_degrees(self.rlat),
+            'longitude': radians_to_degrees(self.rlon)
         }
         return self.data
 
@@ -1950,10 +1955,10 @@ class D800(DataPoint):
         tow = int(math.floor(self.tow))
         self.data = {
             'fix': fix_value(self.fix),
-            'alt': self.alt,
+            'altitude': self.alt,
             'msl_height': self.msl_height,
-            'lat': radians_to_degrees(self.rlat),
-            'lon': radians_to_degrees(self.rlon),
+            'latitude': radians_to_degrees(self.rlat),
+            'longitude': radians_to_degrees(self.rlon),
             'east': self.east,
             'north': self.north,
             'tow': self.tow,
