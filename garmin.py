@@ -55,24 +55,33 @@ GPS_EPOCH = datetime.utcfromtimestamp(315964800)
 # The Garmin epoch is 1989-12-31 00:00:00 UTC, or
 GARMIN_EPOCH = datetime.utcfromtimestamp(631065600)
 
-# This happens every 1024 weeks, or 7168 days.
-GPS_ROLLOVER_DELTA = timedelta(weeks=1024)
+# The 10-bit GPS WN (week number) parameter "rolls over" to zero every 1024
+# weeks starting from 1980-01-06 00:00:00 UTC, the start of the "First GPS Time Epoch".
+# The "Second GPS Time Epoch" began 1024 weeks later, at 1999-08-22 00:00:00 UTC,
+# and is the current epoch.
+# The "Third GPS Time Epoch" will begin 1024 weeks after that, at 2019-04-07 00:00:00 UTC,
+# and will require firmware updates to all current GPSes, unless they can
+# account for the rollover internally.
+# See https://ics-cert.us-cert.gov/sites/default/files/documents/Memorandum_on_GPS_2019.pdf
+WN_ROLLOVER_DELTA = timedelta(weeks=1024)
+
+# Change this to WN_ROLLOVER_DELTA * 2 on 2019-04-07.
+CURRENT_GPS_DELTA = WN_ROLLOVER_DELTA
 
 # My GPS 18 apparently did not get the firmware for the 1999 GPS rollover.
-# Make this GPS_ROLLOVER_DELTA * 2 on or after April 6, 2019?
-# See https://ics-cert.us-cert.gov/sites/default/files/documents/Memorandum_on_GPS_2019.pdf
-MY_DELTA = GPS_ROLLOVER_DELTA
+CURRENT_GARMIN_DELTA = WN_ROLLOVER_DELTA
 
-# Convert from the "GPS week number" which might be modulo 1024,
+# Convert from the "GPS week number" which is modulo 1024.
 # plus the "GPS seconds of week" and "leap seconds" to convert to UTC time.
 # week_num = GPS week number, usually 0-1023 (int)
 # tow = GPS standard seconds of the week (int)
 # leap_secs = adjustment for UTC added seconds (int)
 def gpsWeeksToUTC(week_num, tow, leap_seconds=18):
-    days_of_week, seconds_of_day = divmod(tow, 86400)
-    elapsed = timedelta(weeks=week_num, days=days_of_week, seconds=(seconds_of_day + leap_seconds))
+    elapsed = timedelta(days=0)
     try:
-        return GPS_EPOCH + MY_DELTA + elapsed
+        days_of_week, seconds_of_day = divmod(tow, 86400)
+        elapsed = timedelta(weeks=week_num, days=days_of_week, seconds=(seconds_of_day + leap_seconds))
+        return GPS_EPOCH + CURRENT_GPS_DELTA + elapsed
     except:
         return elapsed
 
@@ -82,10 +91,11 @@ def gpsWeeksToUTC(week_num, tow, leap_seconds=18):
 # tow = GPS standard seconds of the week (int)
 # leap_secs = adjustment for UTC added seconds (int)
 def garminDaysToUTC(garmin_days, tow, leap_seconds=18):
-    days_of_week, seconds_of_day = divmod(tow, 86400)
-    elapsed = timedelta(days=(garmin_days + days_of_week), seconds=(seconds_of_day + leap_seconds))
+    elapsed = timedelta(days=0)
     try:
-        return GARMIN_EPOCH + MY_DELTA + elapsed
+        days_of_week, seconds_of_day = divmod(tow, 86400)
+        elapsed = timedelta(days=(garmin_days + days_of_week), seconds=(seconds_of_day + leap_seconds))
+        return GARMIN_EPOCH + CURRENT_GARMIN_DELTA + elapsed
     except:
         return elapsed
 
@@ -95,7 +105,7 @@ def garminDaysToUTC(garmin_days, tow, leap_seconds=18):
 def rolloverAdjustedUTC(year, month, day, hour, minute, second):
     base = datetime(year, month, day, hour, minute, second)
     try:
-        return base + MY_DELTA
+        return base + CURRENT_GARMIN_DELTA
     except:
         return base
 
@@ -2809,7 +2819,7 @@ def main(device = None):
         print "-----------------"
         print "GPS epoch:", GPS_EPOCH.isoformat(' ')
         print "Garmin epoch:", GARMIN_EPOCH.isoformat(' ')
-        print "Rollover delta (days):", MY_DELTA.days
+        print "Rollover delta (days):", CURRENT_GARMIN_DELTA.days
 
 
     # Show waypoints
