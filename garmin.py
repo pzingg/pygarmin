@@ -52,37 +52,50 @@ VERBOSE = 5
 # The GPS epoch is 1980-01-06 00:00:00 UTC, or
 GPS_EPOCH = datetime.utcfromtimestamp(315964800)
 
-# The Garmin epoch is 1990-01-01 00:00:00 UTC, or
-GARMIN_EPOCH = datetime.utcfromtimestamp(631152000)
+# The Garmin epoch is 1989-12-31 00:00:00 UTC, or
+GARMIN_EPOCH = datetime.utcfromtimestamp(631065600)
 
-# By trial and error, this seems to be the right epoch for the Garmin GPS 18
-# 2009-08-07 00:00:00 UTC
-GPS18_EPOCH = datetime.utcfromtimestamp(1250467200)
+# This happens every 1024 weeks, or 7168 days.
+GPS_ROLLOVER_DELTA = timedelta(weeks=1024)
 
-# 7168 days?
-GPS18_DELTA = GPS18_EPOCH - GARMIN_EPOCH
+# My GPS 18 apparently did not get the firmware for the 1999 GPS rollover.
+# Make this GPS_ROLLOVER_DELTA * 2 on or after April 6, 2019?
+# See https://ics-cert.us-cert.gov/sites/default/files/documents/Memorandum_on_GPS_2019.pdf
+MY_DELTA = GPS_ROLLOVER_DELTA
 
-def gpsToUTC(gps_week, gps_seconds, leap_seconds):
-    days = gps_week * 7
-    seconds = gps_seconds + leap_seconds
-    elapsed = timedelta(days=days, seconds=seconds)
+# Convert from the "GPS week number" which might be modulo 1024,
+# plus the "GPS seconds of week" and "leap seconds" to convert to UTC time.
+# week_num = GPS week number, usually 0-1023 (int)
+# tow = GPS standard seconds of the week (int)
+# leap_secs = adjustment for UTC added seconds (int)
+def gpsWeeksToUTC(week_num, tow, leap_seconds=18):
+    days_of_week, seconds_of_day = divmod(tow, 86400)
+    elapsed = timedelta(weeks=week_num, days=days_of_week, seconds=(seconds_of_day + leap_seconds))
     try:
-        return GPS_EPOCH + elapsed
+        return GPS_EPOCH + MY_DELTA + elapsed
     except:
         return elapsed
 
-def garminToUTC(garmin_days, gps_tow, leap_seconds):
-    seconds = (int(gps_tow) % 86400) + leap_seconds
-    elapsed = timedelta(days=garmin_days, seconds=seconds)
+# Use the "Garmin days" and "GPS seconds of week" values, adjusting by "leap seconds"
+# and possibly for the lack of a firmware rollover, to convert to UTC time.
+# garmin_days = days from UTC December 31st, 1989 to the beginning of the current week (int)
+# tow = GPS standard seconds of the week (int)
+# leap_secs = adjustment for UTC added seconds (int)
+def garminDaysToUTC(garmin_days, tow, leap_seconds=18):
+    days_of_week, seconds_of_day = divmod(tow, 86400)
+    elapsed = timedelta(days=(garmin_days + days_of_week), seconds=(seconds_of_day + leap_seconds))
     try:
-        return GPS18_EPOCH + elapsed
+        return GARMIN_EPOCH + MY_DELTA + elapsed
     except:
         return elapsed
 
-def garminDeltaUTC(year, month, day, hour, minute, second):
+# Corrects the datetime reported by the GPS reciever, due to the condition
+# that the receiver did not get a firmware update and is reporting a datetime
+# that is one or two rollover deltas in the past.
+def rolloverAdjustedUTC(year, month, day, hour, minute, second):
     base = datetime(year, month, day, hour, minute, second)
     try:
-        return base + GPS18_DELTA
+        return base + MY_DELTA
     except:
         return base
 
@@ -1857,7 +1870,7 @@ class D600(TimePoint):
                      'hour': self.hour,
                      'min': self.min,
                      'sec': self.sec,
-                     'dt': garminDeltaUTC(self.year, self.month, self.day, self.hour, self.min, self.sec)
+                     'dt': rolloverAdjustedUTC(self.year, self.month, self.day, self.hour, self.min, self.sec)
                      }
         return self.data
 
@@ -1912,7 +1925,10 @@ def fix_value(fix):
 
 class D800(DataPoint):
 
-    parts = ("alt", "epe", "eph", "epv", "fix", "gps_tow", "rlat", "rlon",
+    # grmn_days = days from UTC December 31st, 1989 to the beginning of the current week (int)
+    # tow = GPS standard seconds of the week (float)
+    # leap_secs = adjustment for UTC added seconds
+    parts = ("alt", "epe", "eph", "epv", "fix", "tow", "rlat", "rlon",
              "east", "north", "up", "msl_height", "leap_secs", "grmn_days")
     fmt = "<f f f f h d d d f f f f h l"
 
@@ -1921,6 +1937,7 @@ class D800(DataPoint):
         % (self.gps_tow, self.rlat, self.rlon, self.east, self.north)
 
     def getDict(self):
+        tow = int(math.floor(self.tow))
         self.data = {
             'fix': fix_value(self.fix),
             'alt': self.alt,
@@ -1929,10 +1946,10 @@ class D800(DataPoint):
             'lon': radians_to_degrees(self.rlon),
             'east': self.east,
             'north': self.north,
-            'tow': self.gps_tow,
-            'days': self.grmn_days,
+            'tow': self.tow,
+            'grmn_days': self.grmn_days,
             'leap_secs': self.leap_secs,
-            'dt': garminToUTC(self.grmn_days, self.gps_tow, self.leap_secs)
+            'dt': garminDaysToUTC(self.grmn_days, tow, self.leap_secs)
         }
         return self.data
 
@@ -2509,7 +2526,7 @@ class Garmin:
             self.prxLink = self.protos["proximity"][0](
                 self.link, self.cmdProto,self.protos["proximity"][1])
 
-        # self.timeLink = A500(L001,A010,D501)
+        # self.almLink = A500(L001,A010,D501)
         if self.protos.has_key("almanac"):
             self.almLink = self.protos["almanac"][0](
                 self.link, self.cmdProto,self.protos["almanac"][1])
@@ -2790,10 +2807,9 @@ def main(device = None):
         print
         print "Date information:"
         print "-----------------"
-        print "GPS epoch:", GPS_EPOCH
-        print "Garmin epoch:", GARMIN_EPOCH
-        print "GPS 18 epoch:", GPS18_EPOCH
-        print "GPS 18 offset:", GPS18_DELTA
+        print "GPS epoch:", GPS_EPOCH.isoformat(' ')
+        print "Garmin epoch:", GARMIN_EPOCH.isoformat(' ')
+        print "Rollover delta (days):", MY_DELTA.days
 
 
     # Show waypoints
